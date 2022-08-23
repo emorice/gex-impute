@@ -162,28 +162,31 @@ def gex_insample_transformed_counts(gex_tissue_counts, transformation):
     raise NotImplementedError(transformation)
 
 @step(vtag='+dict')
-def gex_tissue_shape(gex_tissue_counts_table):
+def gex_tissue_shape(gex_tissue_counts):
     """
     Number of genes and samples for a given tissue
     """
-    gene_count, sample_count = gex_tissue_counts_table.shape
+    sample_info, gene_info, data = gex_tissue_counts
+    assert len(sample_info) == data.shape[0]
+    assert len(gene_info) == data.shape[1]
+
     return {
-        'gene_count': gene_count,
-        'sample_count': sample_count
+        'gene_count': len(gene_info),
+        'sample_count': len(sample_info)
         }
 
 _FC = 5
 step.bind(gex_fold_count=_FC)
 
 @step
-def gex_tissue_masks(gex_tissue_shape, gex_fold_count):
+def gex_tissue_cv_sample_masks(gex_tissue_shape, gex_fold_count):
     """
     Generate cross-validation masks for a given tissue
     """
     return gemz.utils.cv_masks(gex_fold_count, gex_tissue_shape['sample_count'])
 
 @step(items=_FC)
-def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_masks):
+def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_cv_sample_masks):
     """
     Quantile normalize across-samples, in-gene, on top of possible across-genes
     pre-transformations, for each cv-fold
@@ -192,7 +195,7 @@ def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_masks):
 
     qn_data_list = gemz.utils.quantile_normalize(
         data,
-        gex_tissue_masks[:, :, None], # Bcast mask along genes
+        gex_tissue_cv_sample_masks[:, :, None], # Bcast mask along genes
         axis=0, # Across samples = dim 0
         )
 
@@ -200,6 +203,24 @@ def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_masks):
         (sample_info, gene_info, qn_data)
         for qn_data in qn_data_list
         ]
+
+@step(vtag='-bool')
+def gex_tissue_expressed_gene_masks(gex_tissue_counts,
+        gex_tissue_cv_sample_masks,
+        count_threshold=6, prop_threshold=0.2):
+    """
+    Compute masks of genes to keep based on a "at least 20% with at least 6 reads" fixed
+    threshold
+    """
+    _sample_info, _gene_info, data_sg = gex_tissue_counts
+    sample_masks_ms = gex_tissue_cv_sample_masks
+
+    above_thr_sg = 1 * (data_sg >= count_threshold)
+    num_above_thr_mg = sample_masks_ms @ above_thr_sg
+    sample_count_m1 = sample_masks_ms.sum(axis=-1, keepdims=True)
+    above_prop_thr_mg = num_above_thr_mg >= prop_threshold * sample_count_m1
+
+    return above_prop_thr_mg
 
 # Test configuration
 step.bind(tissue_name='Whole Blood', transformation='cpm')

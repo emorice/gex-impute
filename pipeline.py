@@ -222,5 +222,37 @@ def gex_tissue_expressed_gene_masks(gex_tissue_counts,
 
     return above_prop_thr_mg
 
+@step(vtag='+mask')
+def gex_tissue_cv_fold_one(
+        gex_tissue_qn_one,
+        fold_index,
+        gex_tissue_expressed_gene_masks,
+        gex_tissue_cv_sample_masks
+        ):
+    """
+    Train/test split along samples of transformed gene expression, with gene
+    expression filters
+    """
+    sample_info, gene_info, data = gex_tissue_qn_one
+
+    gene_mask = gex_tissue_expressed_gene_masks[fold_index]
+    sample_mask = gex_tissue_cv_sample_masks[fold_index]
+
+    gene_info = gene_info.filter(gene_mask)
+    data = data[:, gene_mask]
+
+    train = data[sample_mask, :]
+    test = data[~sample_mask, :]
+
+    sample_info = sample_info.append_column('is_train', pa.array(sample_mask))
+
+    return {
+        'train': train,
+        'test': test,
+        'gene_info': gene_info,
+        'sample_info': sample_info,
+        }
+
 # Test configuration
 step.bind(tissue_name='Whole Blood', transformation='cpm')
+step.bind(gex_tissue_qn_one=gex_tissue_qn()[0], fold_index=0)

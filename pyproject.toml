@@ -2,6 +2,7 @@
 name = "gex-impute"
 version = "0.0.dev1"
 dependencies = [
+	"pyarrow",
 	"galp @ git+ssh://git@github.com/emorice/galp.git",
-	"pyarrow"
+	"gemz @ git+ssh://git@github.com/emorice/gemz.git",
 	]

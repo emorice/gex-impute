@@ -10,6 +10,9 @@ import pyarrow as pa
 import pyarrow.csv as pacsv
 import pyarrow.compute as pc
 
+import numpy as np
+
+import gemz
 import galp
 
 step = galp.StepSet()
@@ -119,3 +122,84 @@ def gex_tissue_counts_table(tissue_name, gex_counts_table, gex_sample_info_table
                     ], names=names)
                 )
         return pa.Table.from_batches(out_batches)
+
+@step(vtag='swapdims')
+def gex_tissue_counts(gex_tissue_counts_table):
+    """
+    Split the table into two meta data tables and a numpy array
+
+    The array has shape (sample_count, gene_count), so the transpose of the
+    table shape
+    """
+    gene_info = gex_tissue_counts_table.select(('Name', 'Description'))
+
+    table = gex_tissue_counts_table.drop(('Name', 'Description'))
+
+    sample_info = pa.Table.from_pydict({'sample': pa.array(table.column_names)})
+
+    return sample_info, gene_info, np.array(table)
+
+@step
+def gex_insample_transformed_counts(gex_tissue_counts, transformation):
+    """
+    Apply in-sample, across-genes transformation
+    """
+    sample_info, gene_info, data = gex_tissue_counts
+
+    if transformation == 'raw':
+        return sample_info, gene_info, data
+
+    if transformation == 'cpm':
+        # Across genes = dim -1
+        library_size = data.sum(axis=-1, keepdims=True)
+        sample_info = sample_info.append_column('library_size',
+                pa.array(np.squeeze(library_size, axis=-1)))
+        return (sample_info, gene_info,
+            data / library_size * 1e6
+            )
+
+    # To be added: TMM, QN
+    raise NotImplementedError(transformation)
+
+@step(vtag='+dict')
+def gex_tissue_shape(gex_tissue_counts_table):
+    """
+    Number of genes and samples for a given tissue
+    """
+    gene_count, sample_count = gex_tissue_counts_table.shape
+    return {
+        'gene_count': gene_count,
+        'sample_count': sample_count
+        }
+
+_FC = 5
+step.bind(gex_fold_count=_FC)
+
+@step
+def gex_tissue_masks(gex_tissue_shape, gex_fold_count):
+    """
+    Generate cross-validation masks for a given tissue
+    """
+    return gemz.utils.cv_masks(gex_fold_count, gex_tissue_shape['sample_count'])
+
+@step(items=_FC)
+def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_masks):
+    """
+    Quantile normalize across-samples, in-gene, on top of possible across-genes
+    pre-transformations, for each cv-fold
+    """
+    sample_info, gene_info, data = gex_insample_transformed_counts
+
+    qn_data_list = gemz.utils.quantile_normalize(
+        data,
+        gex_tissue_masks[:, :, None], # Bcast mask along genes
+        axis=0, # Across samples = dim 0
+        )
+
+    return [
+        (sample_info, gene_info, qn_data)
+        for qn_data in qn_data_list
+        ]
+
+# Test configuration
+step.bind(tissue_name='Whole Blood', transformation='cpm')

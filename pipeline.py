@@ -17,12 +17,20 @@ import galp
 
 step = galp.StepSet()
 
+# pylint: disable=redefined-outer-name
+
 # Constants
 URLS = {
     ## Url of public RNA-seq counts
-    'counts': 'https://storage.googleapis.com/gtex_analysis_v8/rna_seq_data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_reads.gct.gz',
+    'counts': (
+        'https://storage.googleapis.com/gtex_analysis_v8/'
+        'rna_seq_data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_reads.gct.gz'
+        ),
     ## Url of corresponding meta data, mostly tissue type
-    'sample_info': 'https://storage.googleapis.com/gtex_analysis_v8/annotations/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt'
+    'sample_info': (
+        'https://storage.googleapis.com/gtex_analysis_v8/'
+        'annotations/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt'
+        )
 }
 
 ## Buffer size for streaming raw RNA-seq

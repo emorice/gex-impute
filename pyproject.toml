@@ -5,4 +5,5 @@ dependencies = [
 	"pyarrow",
 	"galp @ git+ssh://git@github.com/emorice/galp.git",
 	"gemz @ git+ssh://git@github.com/emorice/gemz.git",
+	"gemz-galp @ git+ssh://git@github.com/emorice/gemz-galp.git",
 	]

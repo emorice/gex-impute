@@ -14,6 +14,7 @@ import numpy as np
 
 import gemz
 import galp
+import gemz_galp.models
 
 step = galp.StepSet()
 
@@ -264,3 +265,9 @@ def gex_tissue_cv_fold_one(
 # Test configuration
 step.bind(tissue_name='Whole Blood', transformation='cpm')
 step.bind(gex_tissue_qn_one=gex_tissue_qn()[0], fold_index=0)
+
+test_model = gemz_galp.models.fit_eval(
+        {'model': 'linear'},
+        gex_tissue_cv_fold_one,
+        'iRSS'
+        )

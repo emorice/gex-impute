@@ -231,9 +231,9 @@ def gex_tissue_expressed_gene_masks(gex_tissue_counts,
 
     return above_prop_thr_mg
 
-@step(vtag='+mask')
-def gex_tissue_cv_fold_one(
-        gex_tissue_qn_one,
+@step
+def gex_tissue_fold(
+        gex_tissue_qn_indexed,
         fold_index,
         gex_tissue_expressed_gene_masks,
         gex_tissue_cv_sample_masks
@@ -242,7 +242,7 @@ def gex_tissue_cv_fold_one(
     Train/test split along samples of transformed gene expression, with gene
     expression filters
     """
-    sample_info, gene_info, data = gex_tissue_qn_one
+    sample_info, gene_info, data = gex_tissue_qn_indexed
 
     gene_mask = gex_tissue_expressed_gene_masks[fold_index]
     sample_mask = gex_tissue_cv_sample_masks[fold_index]
@@ -264,10 +264,29 @@ def gex_tissue_cv_fold_one(
 
 # Test configuration
 step.bind(tissue_name='Whole Blood', transformation='cpm')
-step.bind(gex_tissue_qn_one=gex_tissue_qn[0], fold_index=0)
+step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
-test_model = gemz_galp.models.fit_eval(
+step.bind(linear_model=gemz_galp.models.fit_eval(
         {'model': 'linear'},
-        gex_tissue_cv_fold_one,
+        gex_tissue_fold,
         'iRSS'
+        ))
+
+@step(vtag='0.1')
+def model_gene_r2s(
+        gex_tissue_fold,
+        linear_model
+        ):
+    """
+    Per gene residual share of variance for all evaluated models
+    """
+    test_variances = np.var(gex_tissue_fold['test'], axis=0)
+    num_test_samples = gex_tissue_fold['test'].shape[0]
+
+    return (
+        gex_tissue_fold['gene_info']
+        .append_column('variance', pa.array(test_variances))
+        .append_column('linear_r2', pa.array(
+            linear_model['loss'] / (test_variances * num_test_samples)
+            ))
         )

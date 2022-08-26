@@ -12,6 +12,8 @@ import pyarrow.compute as pc
 
 import numpy as np
 
+import plotly.graph_objects as go
+
 import gemz
 import galp
 import gemz_galp.models
@@ -290,3 +292,17 @@ def model_gene_r2s(
             linear_model['loss'] / (test_variances * num_test_samples)
             ))
         )
+
+@step.view
+def hist_linear_r2(model_gene_r2s):
+    """
+    Histogram of per-gene difficulty as measured by perf of reference model
+    """
+    return go.Figure([
+                go.Histogram(x=model_gene_r2s['linear_r2'])
+            ], {
+                'xaxis.title': 'Linear model residual R^2',
+                'yaxis.title': 'Number of genes',
+                'width': 800,
+                }
+            )

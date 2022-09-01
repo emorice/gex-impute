@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 import gemz
 import galp
 import gemz_galp.models
+import gemz.plots
 
 step = galp.StepSet()
 
@@ -268,16 +269,25 @@ def gex_tissue_fold(
 step.bind(tissue_name='Whole Blood', transformation='cpm')
 step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
-step.bind(linear_model=gemz_galp.models.fit_eval(
+step.bind(models=[
+    (
+        spec,
+        gemz_galp.models.fit_eval(
+            spec,
+            gex_tissue_fold,
+            'iRSS'
+            )
+    )
+    for spec in [
         {'model': 'linear'},
-        gex_tissue_fold,
-        'iRSS'
-        ))
+        {'model': 'cv', 'inner': {'model': 'svd'}, 'loss_name': 'GEOM'}
+        ]
+    ])
 
 @step(vtag='0.1')
 def model_gene_r2s(
         gex_tissue_fold,
-        linear_model
+        models
         ):
     """
     Per gene residual share of variance for all evaluated models
@@ -285,12 +295,16 @@ def model_gene_r2s(
     test_variances = np.var(gex_tissue_fold['test'], axis=0)
     num_test_samples = gex_tissue_fold['test'].shape[0]
 
-    return (
+    return pa.concat_tables(
         gex_tissue_fold['gene_info']
-        .append_column('variance', pa.array(test_variances))
-        .append_column('linear_r2', pa.array(
-            linear_model['loss'] / (test_variances * num_test_samples)
-            ))
+            .append_column('model', pa.array(np.full(
+                len(gex_tissue_fold['gene_info']),
+                gemz.models.get_name(spec)
+                )))
+            .append_column('r2', pa.array(
+                model['loss'] / (test_variances * num_test_samples)
+                ))
+        for spec, model in models
         )
 
 @step.view
@@ -299,10 +313,57 @@ def hist_linear_r2(model_gene_r2s):
     Histogram of per-gene difficulty as measured by perf of reference model
     """
     return go.Figure([
-                go.Histogram(x=model_gene_r2s['linear_r2'])
+                go.Histogram(x=
+                    model_gene_r2s
+                        .filter(pc.field('model') == 'linear')
+                        ['r2']
+                    )
             ], {
                 'xaxis.title': 'Linear model residual R^2',
                 'yaxis.title': 'Number of genes',
                 'width': 800,
                 }
             )
+
+@step.view
+def vs_linear_svd_r2(model_gene_r2s):
+    """
+    Histogram of per-gene difficulty as measured by perf of reference model
+    """
+    r2_df = model_gene_r2s.to_pandas()
+
+    r2_df = r2_df.pivot(index=['Name', 'Description'], columns='model', values='r2')
+
+    lin_r2 = r2_df['linear']
+    svd_r2 = r2_df['cv/svd']
+    desc = r2_df.index.to_frame()['Description']
+
+    return go.Figure([
+                go.Scattergl(
+                    x=lin_r2,
+                    y=svd_r2 / lin_r2,
+                    hovertext=desc,
+                    mode='markers',
+                    marker={'size': 3}
+                    )
+            ], {
+                'xaxis.title': 'Linear model residual R^2',
+                'xaxis.type': 'log',
+                'yaxis.title': 'Relative SVD model residual R^2',
+                'width': 1000,
+                'height': 800,
+                }
+            )
+
+@step.view
+def cv_svd(models):
+    """
+    Cross-validation curve for SVD
+    """
+    spec, cfe = next(
+            (spec, cfe)
+            for spec, cfe in models
+            if spec['model'] == 'cv'
+            if spec['inner']['model'] == 'svd'
+            )
+    return gemz.plots.plot_cv(spec, cfe['fit'])

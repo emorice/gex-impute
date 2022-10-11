@@ -280,7 +280,8 @@ step.bind(models=[
     )
     for spec in [
         {'model': 'linear'},
-        {'model': 'cv', 'inner': {'model': 'svd'}, 'loss_name': 'GEOM'}
+        {'model': 'cv', 'inner': {'model': 'svd'}, 'loss_name': 'GEOM'},
+        {'model': 'peer', 'n_factors': 60}
         ]
     ])
 
@@ -325,8 +326,10 @@ def hist_linear_r2(model_gene_r2s):
                 }
             )
 
+step.bind(alt_model='peer/60')
+
 @step.view
-def vs_linear_svd_r2(model_gene_r2s):
+def vs_linear_other_r2(model_gene_r2s, alt_model):
     """
     Histogram of per-gene difficulty as measured by perf of reference model
     """
@@ -334,22 +337,46 @@ def vs_linear_svd_r2(model_gene_r2s):
 
     r2_df = r2_df.pivot(index=['Name', 'Description'], columns='model', values='r2')
 
-    lin_r2 = r2_df['linear']
-    svd_r2 = r2_df['cv/svd']
     desc = r2_df.index.to_frame()['Description']
+
+    n_bins = 20
+    trend = (
+        r2_df[['linear', alt_model]]
+        .sort_values('linear')
+        .assign(cdf=
+            np.floor(n_bins * np.arange(len(r2_df)) / len(r2_df))
+            / n_bins
+            )
+        .groupby('cdf')
+        .median()
+        )
 
     return go.Figure([
                 go.Scattergl(
-                    x=lin_r2,
-                    y=svd_r2 / lin_r2,
+                    x=r2_df['linear'],
+                    y=r2_df[alt_model] / r2_df['linear'],
                     hovertext=desc,
                     mode='markers',
-                    marker={'size': 3}
+                    marker={'size': 2}
+                    ),
+                go.Scattergl(
+                    x=trend['linear'], y=trend[alt_model] / trend['linear'], mode='lines',
+                    hovertext=[
+                    f'{100 * l:.6g} - {100 *u:.6g} %'
+                    for l, u in
+                    zip(trend.index, [*trend.index[1:], 1.0])
+                    ],
+                    name='median'),
+                go.Scattergl(
+                    x=r2_df['linear'],
+                    y=np.ones_like(r2_df['linear']),
+                    mode='lines',
+                    name='baseline'
                     )
             ], {
-                'xaxis.title': 'Linear model residual R^2',
+                'xaxis.title': 'Linear model residual R²',
                 'xaxis.type': 'log',
-                'yaxis.title': 'Relative SVD model residual R^2',
+                'yaxis.title': f'Relative alternative model ({alt_model}) residual R²',
                 'width': 1000,
                 'height': 800,
                 }

@@ -281,7 +281,8 @@ step.bind(models=[
     for spec in [
         {'model': 'linear'},
         {'model': 'cv', 'inner': {'model': 'svd'}, 'loss_name': 'GEOM'},
-        {'model': 'peer', 'n_factors': 60}
+        {'model': 'peer', 'n_factors': 60},
+        {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True}
         ]
     ])
 
@@ -326,12 +327,13 @@ def hist_linear_r2(model_gene_r2s):
                 }
             )
 
-step.bind(alt_model='peer/60')
+step.bind(ref_model='peer/60')
+step.bind(alt_model='peer/60r')
 
 @step.view
-def vs_linear_other_r2(model_gene_r2s, alt_model):
+def vs_r2(model_gene_r2s, ref_model, alt_model):
     """
-    Histogram of per-gene difficulty as measured by perf of reference model
+    Histogram of per-gene difficulty as measured by perf wrt reference model
     """
     r2_df = model_gene_r2s.to_pandas()
 
@@ -341,8 +343,8 @@ def vs_linear_other_r2(model_gene_r2s, alt_model):
 
     n_bins = 20
     trend = (
-        r2_df[['linear', alt_model]]
-        .sort_values('linear')
+        r2_df[[ref_model, alt_model]]
+        .sort_values(ref_model)
         .assign(cdf=
             np.floor(n_bins * np.arange(len(r2_df)) / len(r2_df))
             / n_bins
@@ -353,14 +355,14 @@ def vs_linear_other_r2(model_gene_r2s, alt_model):
 
     return go.Figure([
                 go.Scattergl(
-                    x=r2_df['linear'],
-                    y=r2_df[alt_model] / r2_df['linear'],
+                    x=r2_df[ref_model],
+                    y=r2_df[alt_model] / r2_df[ref_model],
                     hovertext=desc,
                     mode='markers',
                     marker={'size': 2}
                     ),
                 go.Scattergl(
-                    x=trend['linear'], y=trend[alt_model] / trend['linear'], mode='lines',
+                    x=trend[ref_model], y=trend[alt_model] / trend[ref_model], mode='lines',
                     hovertext=[
                     f'{100 * l:.6g} - {100 *u:.6g} %'
                     for l, u in
@@ -368,13 +370,14 @@ def vs_linear_other_r2(model_gene_r2s, alt_model):
                     ],
                     name='median'),
                 go.Scattergl(
-                    x=r2_df['linear'],
-                    y=np.ones_like(r2_df['linear']),
+                    x=r2_df[ref_model],
+                    y=np.ones_like(r2_df[ref_model]),
                     mode='lines',
                     name='baseline'
                     )
             ], {
-                'xaxis.title': 'Linear model residual R²',
+                'title': f'{alt_model} vs. {ref_model}',
+                'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
                 'yaxis.title': f'Relative alternative model ({alt_model}) residual R²',
                 'width': 1000,

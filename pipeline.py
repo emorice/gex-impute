@@ -281,7 +281,8 @@ models=[
     for spec in ([
         {'model': 'linear'},
         {'model': 'peer', 'n_factors': 60},
-        {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True}
+        {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
+        {'model': 'igmm', 'n_groups': 2},
         ] + [
         {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM'}
         for inner in ['svd', 'cmk'] #'peer', 'cmk']

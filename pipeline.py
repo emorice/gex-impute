@@ -269,7 +269,7 @@ def gex_tissue_fold(
 step.bind(tissue_name='Whole Blood', transformation='cpm')
 step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
-step.bind(models=[
+models=[
     (
         spec,
         gemz_galp.models.fit_eval(
@@ -278,13 +278,17 @@ step.bind(models=[
             'iRSS'
             )
     )
-    for spec in [
+    for spec in ([
         {'model': 'linear'},
-        {'model': 'cv', 'inner': {'model': 'svd'}, 'loss_name': 'GEOM'},
         {'model': 'peer', 'n_factors': 60},
         {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True}
-        ]
-    ])
+        ] + [
+        {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM'}
+        for inner in ['svd', 'cmk'] #'peer', 'cmk']
+        ])
+    ]
+
+step.bind(models=models)
 
 @step(vtag='0.1')
 def model_gene_r2s(
@@ -327,8 +331,8 @@ def hist_linear_r2(model_gene_r2s):
                 }
             )
 
-step.bind(ref_model='peer/60')
-step.bind(alt_model='peer/60r')
+step.bind(ref_model='linear')
+step.bind(alt_model='cv/cmk')
 
 @step.view
 def vs_r2(model_gene_r2s, ref_model, alt_model):
@@ -385,15 +389,21 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                 }
             )
 
-@step.view
-def cv_svd(models):
-    """
-    Cross-validation curve for SVD
-    """
-    spec, cfe = next(
+step.bind(cv_model=next(
             (spec, cfe)
             for spec, cfe in models
             if spec['model'] == 'cv'
-            if spec['inner']['model'] == 'svd'
+            if spec['inner']['model'] == 'cmk'
             )
-    return gemz.plots.plot_cv(spec, cfe['fit'])
+        )
+
+@step.view
+def cv_plot(cv_model):
+    """
+    Cross-validation curve for SVD
+    """
+    spec, cfe = cv_model
+    
+    fig = gemz.plots.plot_cv(spec, cfe['fit'])
+    fig = fig.update_layout(title=f'CV results for {gemz.models.get_name(spec)}')
+    return fig

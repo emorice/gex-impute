@@ -283,9 +283,10 @@ models=[
         {'model': 'peer', 'n_factors': 60},
         {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
         {'model': 'igmm', 'n_groups': 2},
+        {'model': 'lscv_free_diagonal', 'scale': None},
         ] + [
         {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM'}
-        for inner in ['svd', 'cmk'] #'peer', 'cmk']
+        for inner in ['svd', 'cmk', 'igmm'] #'peer']
         ])
     ]
 
@@ -333,12 +334,12 @@ def hist_linear_r2(model_gene_r2s):
             )
 
 step.bind(ref_model='linear')
-step.bind(alt_model='cv/cmk')
+step.bind(alt_model='igmm/2')
 
 @step.view
 def vs_r2(model_gene_r2s, ref_model, alt_model):
     """
-    Histogram of per-gene difficulty as measured by perf wrt reference model
+    Scatter of per-gene difficulty as measured by perf wrt reference model
     """
     r2_df = model_gene_r2s.to_pandas()
 
@@ -389,6 +390,55 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                 'height': 800,
                 }
             )
+@step.view
+def all_r2(model_gene_r2s, ref_model):
+    """
+    Scaltter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
+    """
+    r2_df = model_gene_r2s.to_pandas()
+
+    r2_df = r2_df.pivot(index=['Name', 'Description'], columns='model', values='r2')
+
+    desc = r2_df.index.to_frame()['Description']
+
+    n_bins = 20
+    trends = (
+        r2_df
+        .sort_values(ref_model)
+        .assign(cdf=
+            np.floor(n_bins * np.arange(len(r2_df)) / len(r2_df))
+            / n_bins
+            )
+        .groupby('cdf')
+        .median()
+        )
+
+    return go.Figure([
+                go.Scattergl(
+                    x=trends[ref_model], y=trends[model] / trends[ref_model], mode='lines',
+                    hovertext=[
+                    f'{100 * l:.6g} - {100 *u:.6g} %'
+                    for l, u in
+                    zip(trends.index, [*trends.index[1:], 1.0])
+                    ],
+                    name=model)
+                for model in trends if model != ref_model
+            ] + [
+                go.Scattergl(
+                    x=r2_df[ref_model],
+                    y=np.ones_like(r2_df[ref_model]),
+                    mode='lines',
+                    name='baseline'
+                    )
+            ], {
+                'title': f'Medians of all models vs. {ref_model}',
+                'xaxis.title': f'Reference model ({ref_model}) residual R²',
+                'xaxis.type': 'log',
+                'yaxis.title': f'Relative alternative model residual R²',
+                'width': 1000,
+                'height': 800,
+                }
+            )
 
 step.bind(cv_model=next(
             (spec, cfe)
@@ -405,6 +455,6 @@ def cv_plot(cv_model):
     """
     spec, cfe = cv_model
     
-    fig = gemz.plots.plot_cv(spec, cfe['fit'])
+    fig, = gemz.plots.plot_cv(spec, cfe['fit'])
     fig = fig.update_layout(title=f'CV results for {gemz.models.get_name(spec)}')
     return fig

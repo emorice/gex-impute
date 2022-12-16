@@ -283,16 +283,24 @@ models=[
         {'model': 'peer', 'n_factors': 60},
         {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
         {'model': 'igmm', 'n_groups': 2},
+        {'model': 'lscv_precision_target'},
+        {'model': 'lscv_free_diagonal'},
         {'model': 'lscv_free_diagonal', 'scale': None},
         ] + [
-        {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM'}
-        for inner in ['svd', 'cmk', 'igmm'] #'peer']
+        {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM', 'grid_max': gmax}
+        for inner, gmax in [
+            ('linear_shrinkage', None),
+            ('svd', None),
+            ('cmk', None),
+            ('igmm', 30), # 30 mixture components
+            ('peer', 100), # 100 peer factors
+            ]
         ])
     ]
 
 step.bind(models=models)
 
-@step(vtag='0.1')
+@step(vtag='0.2 renaming')
 def model_gene_r2s(
         gex_tissue_fold,
         models
@@ -390,23 +398,27 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                 'height': 800,
                 }
             )
+
 @step.view
 def all_r2(model_gene_r2s, ref_model):
     """
-    Scaltter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
+    Scatter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
     """
-    r2_df = model_gene_r2s.to_pandas()
+    r2_df = (
+        model_gene_r2s
+        .to_pandas()
+        .pivot(index=['Name', 'Description'], columns='model', values='r2')
+        .sort_values(ref_model)
+        )
 
-    r2_df = r2_df.pivot(index=['Name', 'Description'], columns='model', values='r2')
-
-    desc = r2_df.index.to_frame()['Description']
+    nr2_df = r2_df.apply(lambda s: s / r2_df[ref_model])
+    nr2_df['abs_ref'] = r2_df[ref_model]
 
     n_bins = 20
     trends = (
-        r2_df
-        .sort_values(ref_model)
+        nr2_df
         .assign(cdf=
-            np.floor(n_bins * np.arange(len(r2_df)) / len(r2_df))
+            np.floor(n_bins * np.arange(len(nr2_df)) / len(nr2_df))
             / n_bins
             )
         .groupby('cdf')
@@ -415,14 +427,14 @@ def all_r2(model_gene_r2s, ref_model):
 
     return go.Figure([
                 go.Scattergl(
-                    x=trends[ref_model], y=trends[model] / trends[ref_model], mode='lines',
+                    x=trends['abs_ref'], y=trends[model], mode='lines',
                     hovertext=[
                     f'{100 * l:.6g} - {100 *u:.6g} %'
                     for l, u in
                     zip(trends.index, [*trends.index[1:], 1.0])
                     ],
                     name=model)
-                for model in trends if model != ref_model
+                for model in trends if model not in (ref_model, 'abs_ref')
             ] + [
                 go.Scattergl(
                     x=r2_df[ref_model],
@@ -444,14 +456,14 @@ step.bind(cv_model=next(
             (spec, cfe)
             for spec, cfe in models
             if spec['model'] == 'cv'
-            if spec['inner']['model'] == 'cmk'
+            if spec['inner']['model'] == 'igmm'
             )
         )
 
 @step.view
 def cv_plot(cv_model):
     """
-    Cross-validation curve for SVD
+    Cross-validation curve for bound model
     """
     spec, cfe = cv_model
     

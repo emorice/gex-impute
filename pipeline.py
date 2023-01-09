@@ -19,7 +19,7 @@ import galp
 import gemz_galp.models
 import gemz.plots
 
-step = galp.StepSet()
+step = galp.Block()
 
 # pylint: disable=redefined-outer-name
 
@@ -300,10 +300,15 @@ models=[
 
 step.bind(models=models)
 
+step.bind(model_losses=[
+    (spec, fit_eval['loss'])
+    for spec, fit_eval in models
+    ])
+
 @step(vtag='0.2 renaming')
 def model_gene_r2s(
         gex_tissue_fold,
-        models
+        model_losses
         ):
     """
     Per gene residual share of variance for all evaluated models
@@ -318,9 +323,9 @@ def model_gene_r2s(
                 gemz.models.get_name(spec)
                 )))
             .append_column('r2', pa.array(
-                model['loss'] / (test_variances * num_test_samples)
+                loss / (test_variances * num_test_samples)
                 ))
-        for spec, model in models
+        for spec, loss in model_losses
         )
 
 @step.view

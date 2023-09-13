@@ -13,6 +13,7 @@ import pyarrow.compute as pc
 import numpy as np
 
 import plotly.graph_objects as go
+import plotly_template
 
 import gemz
 import galp
@@ -149,7 +150,9 @@ def gex_tissue_counts(gex_tissue_counts_table):
 
     sample_info = pa.Table.from_pydict({'sample': pa.array(table.column_names)})
 
-    return sample_info, gene_info, np.array(table)
+    # See https://github.com/apache/arrow/pull/36242 , we used (sample,gene)
+    # because it used to be the default ; now we have a transpose for compat
+    return sample_info, gene_info, np.array(table).T
 
 @step
 def gex_insample_transformed_counts(gex_tissue_counts, transformation):
@@ -293,7 +296,7 @@ models=[
             ('svd', None),
             ('cmk', None),
             ('igmm', 30), # 30 mixture components
-            ('peer', 100), # 100 peer factors
+        #    ('peer', 100), # 100 peer factors
             ]
         ])
     ]
@@ -409,6 +412,8 @@ def all_r2(model_gene_r2s, ref_model):
     """
     Scatter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
     """
+    highlights = {'cv/igmm'}
+
     r2_df = (
         model_gene_r2s
         .to_pandas()
@@ -431,20 +436,27 @@ def all_r2(model_gene_r2s, ref_model):
         )
 
     return go.Figure([
-                go.Scattergl(
+                go.Scatter(
                     x=trends['abs_ref'], y=trends[model], mode='lines',
+                    line=(
+                        {'color': 'blue', 'width': 1}
+                        if model in highlights
+                        else {'color': 'black', 'width': 1}
+                        ),
+                    opacity = 1. if model in highlights else 0.2,
                     hovertext=[
                     f'{100 * l:.6g} - {100 *u:.6g} %'
                     for l, u in
                     zip(trends.index, [*trends.index[1:], 1.0])
                     ],
-                    name=model)
+                    name=model, showlegend=(model in highlights)
+                    )
                 for model in trends if model not in (ref_model, 'abs_ref')
             ] + [
-                go.Scattergl(
-                    x=r2_df[ref_model],
-                    y=np.ones_like(r2_df[ref_model]),
+                go.Scatter(
+                    x=trends['abs_ref'], y=trends[ref_model],
                     mode='lines',
+                    line={'color': 'red', 'width': 1},
                     name='baseline'
                     )
             ], {
@@ -452,18 +464,20 @@ def all_r2(model_gene_r2s, ref_model):
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
                 'yaxis.title': f'Relative alternative model residual R²',
-                'width': 1000,
-                'height': 800,
+                'legend.title': 'Model',
+                'width': 600, #1000,
+                'height': 400, #800,
+                'margin': {'t': 40},
                 }
             )
 
-step.bind(cv_model=next(
-            (spec, cfe)
-            for spec, cfe in models
-            if spec['model'] == 'cv'
-            if spec['inner']['model'] == 'igmm'
-            )
-        )
+#step.bind(cv_model=next(
+#            (spec, cfe)
+#            for spec, cfe in models
+#            if spec['model'] == 'cv'
+#            if spec['inner']['model'] == 'igmm'
+#            )
+#        )
 
 @step.view
 def cv_plot(cv_model):

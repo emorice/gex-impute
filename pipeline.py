@@ -15,14 +15,10 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly_template
 
+from galp import step, view
 import gemz
-import galp
 import gemz_galp.models
 import gemz.plots
-
-step = galp.Block()
-
-# pylint: disable=redefined-outer-name
 
 # Constants
 URLS = {
@@ -191,7 +187,7 @@ def gex_tissue_shape(gex_tissue_counts):
         }
 
 _FC = 5
-step.bind(gex_fold_count=_FC)
+#step.bind(gex_fold_count=_FC)
 
 @step
 def gex_tissue_cv_sample_masks(gex_tissue_shape, gex_fold_count):
@@ -269,8 +265,8 @@ def gex_tissue_fold(
         }
 
 # Test configuration
-step.bind(tissue_name='Whole Blood', transformation='cpm')
-step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
+#step.bind(tissue_name='Whole Blood', transformation='cpm')
+#step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
 models=[
     (
@@ -301,12 +297,12 @@ models=[
         ])
     ]
 
-step.bind(models=models)
+#step.bind(models=models)
 
-step.bind(model_losses=[
-    (spec, fit_eval['loss'])
-    for spec, fit_eval in models
-    ])
+#step.bind(model_losses=[
+#    (spec, fit_eval['loss'])
+#    for spec, fit_eval in models
+#    ])
 
 @step(vtag='0.2 renaming')
 def model_gene_r2s(
@@ -331,7 +327,7 @@ def model_gene_r2s(
         for spec, loss in model_losses
         )
 
-@step.view
+@view
 def hist_linear_r2(model_gene_r2s):
     """
     Histogram of per-gene difficulty as measured by perf of reference model
@@ -349,10 +345,10 @@ def hist_linear_r2(model_gene_r2s):
                 }
             )
 
-step.bind(ref_model='linear')
-step.bind(alt_model='igmm/2')
+#step.bind(ref_model='linear')
+#step.bind(alt_model='igmm/2')
 
-@step.view
+@view
 def vs_r2(model_gene_r2s, ref_model, alt_model):
     """
     Scatter of per-gene difficulty as measured by perf wrt reference model
@@ -407,7 +403,7 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                 }
             )
 
-@step.view
+@view
 def all_r2(model_gene_r2s, ref_model):
     """
     Scatter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
@@ -479,13 +475,13 @@ def all_r2(model_gene_r2s, ref_model):
 #            )
 #        )
 
-@step.view
+@view
 def cv_plot(cv_model):
     """
     Cross-validation curve for bound model
     """
     spec, cfe = cv_model
-    
+
     fig, = gemz.plots.plot_cv(spec, cfe['fit'])
     fig = fig.update_layout(title=f'CV results for {gemz.models.get_name(spec)}')
     return fig

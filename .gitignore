@@ -3,3 +3,4 @@ __pycache__
 store
 venv
 
+.ipynb_checkpoints/

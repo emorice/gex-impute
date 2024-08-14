@@ -15,7 +15,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly_template
 
-from galp import step, view
+from galp import step, view, new_path
 import gemz
 import gemz_galp.models
 import gemz.plots
@@ -24,13 +24,13 @@ import gemz.plots
 URLS = {
     ## Url of public RNA-seq counts
     'counts': (
-        'https://storage.googleapis.com/gtex_analysis_v8/'
-        'rna_seq_data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_reads.gct.gz'
+        'https://storage.googleapis.com/adult-gtex/bulk-gex/v8/'
+        + 'rna-seq/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_reads.gct.gz'
         ),
     ## Url of corresponding meta data, mostly tissue type
     'sample_info': (
-        'https://storage.googleapis.com/gtex_analysis_v8/'
-        'annotations/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt'
+        'https://storage.googleapis.com/adult-gtex/annotations/v8/'
+        + 'metadata-files/GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt'
         )
 }
 
@@ -38,11 +38,11 @@ URLS = {
 BUF_SIZE = 10 * 2**20
 
 @step(vtag='+lz4')
-def gex_counts_table(_galp):
+def gex_counts_table():
     """
     Download the gene expression table in arrow format under a new file
     """
-    path = _galp.new_path()
+    path = new_path()
 
     with ExitStack() as stack:
         # Start HTTP request

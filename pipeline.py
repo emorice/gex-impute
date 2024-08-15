@@ -4,6 +4,7 @@ Gene imputation development pipeline on GTEx data
 
 import urllib.request
 import gzip
+from typing import TypedDict, TypeAlias
 from contextlib import ExitStack
 
 import pyarrow as pa
@@ -11,6 +12,7 @@ import pyarrow.csv as pacsv
 import pyarrow.compute as pc
 
 import numpy as np
+import numpy.typing as npt
 
 import plotly.graph_objects as go
 import plotly_template
@@ -38,7 +40,7 @@ URLS = {
 BUF_SIZE = 10 * 2**20
 
 @step(vtag='+lz4')
-def gex_counts_table():
+def gex_counts_table() -> str:
     """
     Download the gene expression table in arrow format under a new file
     """
@@ -87,7 +89,7 @@ def gex_counts_table():
     return path
 
 @step
-def gex_sample_info_table():
+def gex_sample_info_table() -> pa.Table:
     """
     Download the sample information to an arrow table.
 
@@ -104,18 +106,19 @@ downloads = [
     ]
 
 @step(vtag=1)
-def gex_tissue_counts_table(tissue_name, gex_counts_table, gex_sample_info_table):
+def gex_tissue_counts_table(tissue_name: str, counts_table_path: str,
+                            sample_info_table: pa.Table) -> pa.Table:
     """
     Filter a single tissue from the counts table, and checks the result in store.
     """
-    sampids = (gex_sample_info_table
+    sampids = (sample_info_table
             .filter(pc.field('SMTSD') == tissue_name)
             ['SAMPID']
             .to_pylist()
             )
 
     out_batches = []
-    with pa.ipc.open_file(gex_counts_table) as reader:
+    with pa.ipc.open_file(counts_table_path) as reader:
         names = []
         for i in range(reader.num_record_batches):
             in_batch = reader.get_batch(i)
@@ -132,17 +135,22 @@ def gex_tissue_counts_table(tissue_name, gex_counts_table, gex_sample_info_table
                 )
         return pa.Table.from_batches(out_batches)
 
+
+GexDataset: TypeAlias = tuple[pa.Table, pa.Table, npt.NDArray[np.float64]]
+"""Sample info table, gene info table, expression values (sample, gene)"""
+
 @step(vtag='swapdims')
-def gex_tissue_counts(gex_tissue_counts_table):
+def gex_tissue_counts(tissue_counts_table: pa.Table
+                      ) -> GexDataset:
     """
     Split the table into two meta data tables and a numpy array
 
     The array has shape (sample_count, gene_count), so the transpose of the
     table shape
     """
-    gene_info = gex_tissue_counts_table.select(('Name', 'Description'))
+    gene_info = tissue_counts_table.select(('Name', 'Description'))
 
-    table = gex_tissue_counts_table.drop(('Name', 'Description'))
+    table = tissue_counts_table.drop(('Name', 'Description'))
 
     sample_info = pa.Table.from_pydict({'sample': pa.array(table.column_names)})
 
@@ -151,11 +159,13 @@ def gex_tissue_counts(gex_tissue_counts_table):
     return sample_info, gene_info, np.array(table).T
 
 @step
-def gex_insample_transformed_counts(gex_tissue_counts, transformation):
+def gex_insample_transformed_counts(
+        tissue_counts: GexDataset, transformation: str
+        ) -> GexDataset:
     """
     Apply in-sample, across-genes transformation
     """
-    sample_info, gene_info, data = gex_tissue_counts
+    sample_info, gene_info, data = tissue_counts
 
     if transformation == 'raw':
         return sample_info, gene_info, data
@@ -172,14 +182,19 @@ def gex_insample_transformed_counts(gex_tissue_counts, transformation):
     # To be added: TMM, QN
     raise NotImplementedError(transformation)
 
+class GexShapeDict(TypedDict):
+    """Shape of gene expression dataset"""
+    gene_count: int
+    sample_count: int
+
 @step(vtag='+dict')
-def gex_tissue_shape(gex_tissue_counts):
+def gex_tissue_shape(tissue_counts: GexDataset) -> GexShapeDict:
     """
     Number of genes and samples for a given tissue
     """
-    sample_info, gene_info, data = gex_tissue_counts
-    assert len(sample_info) == data.shape[0]
-    assert len(gene_info) == data.shape[1]
+    sample_info, gene_info, data_sg = tissue_counts
+    assert len(sample_info) == data_sg.shape[0]
+    assert len(gene_info) == data_sg.shape[1]
 
     return {
         'gene_count': len(gene_info),
@@ -190,79 +205,120 @@ _FC = 5
 #step.bind(gex_fold_count=_FC)
 
 @step
-def gex_tissue_cv_sample_masks(gex_tissue_shape, gex_fold_count):
+def gex_tissue_cv_sample_masks_fs(tissue_shape: GexShapeDict, fold_count: int
+                               ) -> npt.NDArray[np.bool] :
     """
     Generate cross-validation masks for a given tissue
+
+    Fold x Sample binary array
     """
-    return gemz.utils.cv_masks(gex_fold_count, gex_tissue_shape['sample_count'])
+    return gemz.utils.cv_masks(fold_count, tissue_shape['sample_count'])
 
 @step(items=_FC)
-def gex_tissue_qn(gex_insample_transformed_counts, gex_tissue_cv_sample_masks):
+def gex_tissue_qn(
+        insample_transformed_counts: GexDataset, tissue_cv_sample_masks_fs: npt.NDArray[np.bool]
+        ) -> list[GexDataset]:
     """
     Quantile normalize across-samples, in-gene, on top of possible across-genes
     pre-transformations, for each cv-fold
     """
-    sample_info, gene_info, data = gex_insample_transformed_counts
+    sample_info, gene_info, data_sg = insample_transformed_counts
 
     qn_data_list = gemz.utils.quantile_normalize(
-        data,
-        gex_tissue_cv_sample_masks[:, :, None], # Bcast mask along genes
+        data_sg,
+        tissue_cv_sample_masks_fs[:, :, None], # Bcast mask along genes
         axis=0, # Across samples = dim 0
         )
 
     return [
-        (sample_info, gene_info, qn_data)
-        for qn_data in qn_data_list
+        (sample_info, gene_info, qn_data_sg)
+        for qn_data_sg in qn_data_list
         ]
 
 @step(vtag='-bool')
-def gex_tissue_expressed_gene_masks(gex_tissue_counts,
-        gex_tissue_cv_sample_masks,
-        count_threshold=6, prop_threshold=0.2):
+def gex_tissue_expressed_gene_masks_fg(
+        tissue_counts: GexDataset, tissue_cv_sample_masks_fs: npt.NDArray[np.bool],
+        count_threshold=6, prop_threshold=0.2
+        ) -> npt.NDArray[np.bool]:
     """
     Compute masks of genes to keep based on a "at least 20% with at least 6 reads" fixed
     threshold
     """
-    _sample_info, _gene_info, data_sg = gex_tissue_counts
-    sample_masks_ms = gex_tissue_cv_sample_masks
+    _sample_info, _gene_info, data_sg = tissue_counts
+    sample_masks_fs = tissue_cv_sample_masks_fs
 
     above_thr_sg = 1 * (data_sg >= count_threshold)
-    num_above_thr_mg = sample_masks_ms @ above_thr_sg
-    sample_count_m1 = sample_masks_ms.sum(axis=-1, keepdims=True)
-    above_prop_thr_mg = num_above_thr_mg >= prop_threshold * sample_count_m1
+    num_above_thr_fg = sample_masks_fs @ above_thr_sg
+    sample_count_f1 = sample_masks_fs.sum(axis=-1, keepdims=True)
+    above_prop_thr_fg = num_above_thr_fg >= prop_threshold * sample_count_f1
 
-    return above_prop_thr_mg
+    return above_prop_thr_fg
+
+class FoldDict(TypedDict):
+    """
+    Fold (split) of a gene expression dataset
+    """
+    train: npt.NDArray[np.float64] # s x g
+    test: npt.NDArray[np.float64] # s x g
+    gene_info: pa.Table
+    sample_info: pa.Table
 
 @step
 def gex_tissue_fold(
-        gex_tissue_qn_indexed,
-        fold_index,
-        gex_tissue_expressed_gene_masks,
-        gex_tissue_cv_sample_masks
-        ):
+        tissue_qn_indexed: GexDataset,
+        fold_index: int,
+        tissue_expressed_gene_masks_fg: npt.NDArray[np.bool],
+        tissue_cv_sample_masks_fs: npt.NDArray[np.bool]
+        ) -> FoldDict:
     """
     Train/test split along samples of transformed gene expression, with gene
     expression filters
     """
-    sample_info, gene_info, data = gex_tissue_qn_indexed
+    sample_info, gene_info, data_sg = tissue_qn_indexed
 
-    gene_mask = gex_tissue_expressed_gene_masks[fold_index]
-    sample_mask = gex_tissue_cv_sample_masks[fold_index]
+    gene_mask = tissue_expressed_gene_masks_fg[fold_index]
+    sample_mask = tissue_cv_sample_masks_fs[fold_index]
 
     gene_info = gene_info.filter(gene_mask)
-    data = data[:, gene_mask]
+    data_sg = data_sg[:, gene_mask]
 
-    train = data[sample_mask, :]
-    test = data[~sample_mask, :]
+    train_sg = data_sg[sample_mask, :]
+    test_sg = data_sg[~sample_mask, :]
 
     sample_info = sample_info.append_column('is_train', pa.array(sample_mask))
 
     return {
-        'train': train,
-        'test': test,
+        'train': train_sg,
+        'test': test_sg,
         'gene_info': gene_info,
         'sample_info': sample_info,
         }
+
+def get_tissue_fold(tissue_name: str, fold_index: int):
+    """
+    Prepare a train/test split of pre-processed (filtered and normalized)
+    gene expression data
+    """
+    # Fetch data
+    counts_table = gex_counts_table()
+    sample_info = gex_sample_info_table()
+
+    # Filters and transforms
+    # 1. Subset a tissue
+    tissue_counts_table = gex_tissue_counts_table(
+            tissue_name, counts_table, sample_info
+            )
+    tissue_counts = gex_tissue_counts(tissue_counts_table)
+    tissue_shape = gex_tissue_shape(tissue_counts)
+
+    # 2. Subset randomly for cross-validation
+    sample_masks_fs = gex_tissue_cv_sample_masks_fs(tissue_shape, _FC)
+    # 3. Normalize counts
+    insample_transformed_counts = gex_insample_transformed_counts(tissue_counts, 'cpm')
+    # 4. Quantile normalize
+    tissue_qn = gex_tissue_qn(insample_transformed_counts, sample_masks_fs)
+    gene_mask_fg = gex_tissue_expressed_gene_masks_fg(tissue_counts, sample_masks_fs)
+    return gex_tissue_fold(tissue_qn[fold_index], fold_index, gene_mask_fg, sample_masks_fs)
 
 # Test configuration
 #step.bind(tissue_name='Whole Blood', transformation='cpm')
@@ -406,7 +462,8 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
 @view
 def all_r2(model_gene_r2s, ref_model):
     """
-    Scatter of per-gene difficulty as measured by perf wrt reference model, for all models in compact form.
+    Scatter of per-gene difficulty as measured by perf wrt reference model, for
+    all models in compact form.
     """
     highlights = {'cv/igmm'}
 
@@ -459,7 +516,7 @@ def all_r2(model_gene_r2s, ref_model):
                 'title': f'Medians of all models vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
-                'yaxis.title': f'Relative alternative model residual R²',
+                'yaxis.title': 'Relative alternative model residual R²',
                 'legend.title': 'Model',
                 'width': 600, #1000,
                 'height': 400, #800,

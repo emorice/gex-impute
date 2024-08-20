@@ -78,7 +78,7 @@ def gex_counts_table() -> str:
         i = 1
         while True:
             if not i % 10:
-                print(f'Gex table: imported {i * BUF_SIZE / 2 ** 20} MB')
+                print(f'Gex table: imported {i * BUF_SIZE / 2 ** 20} MB', flush=True)
             try:
                 batch = reader.read_next_batch()
                 writer.write(batch)
@@ -99,11 +99,6 @@ def gex_sample_info_table() -> pa.Table:
         return pacsv.read_csv(response,
                 parse_options=pacsv.ParseOptions(delimiter='\t')
                 )
-
-downloads = [
-    gex_counts_table,
-    gex_sample_info_table,
-    ]
 
 @step(vtag=1)
 def gex_tissue_counts_table(tissue_name: str, counts_table_path: str,
@@ -202,7 +197,6 @@ def gex_tissue_shape(tissue_counts: GexDataset) -> GexShapeDict:
         }
 
 _FC = 5
-#step.bind(gex_fold_count=_FC)
 
 @step
 def gex_tissue_cv_sample_masks_fs(tissue_shape: GexShapeDict, fold_count: int
@@ -294,7 +288,7 @@ def gex_tissue_fold(
         'sample_info': sample_info,
         }
 
-def get_tissue_fold(tissue_name: str, fold_index: int):
+def get_tissue_fold(tissue_name: str, fold_index: int) -> FoldDict:
     """
     Prepare a train/test split of pre-processed (filtered and normalized)
     gene expression data
@@ -324,16 +318,11 @@ def get_tissue_fold(tissue_name: str, fold_index: int):
 #step.bind(tissue_name='Whole Blood', transformation='cpm')
 #step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
-models=[
-    (
-        spec,
-        gemz_galp.models.fit_eval(
-            spec,
-            gex_tissue_fold,
-            'iRSS'
-            )
-    )
-    for spec in ([
+def get_specs() -> list[dict]:
+    """
+    Specification of all gemz models tried
+    """
+    return [
         {'model': 'linear'},
         {'model': 'peer', 'n_factors': 60},
         {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
@@ -350,38 +339,42 @@ models=[
             ('igmm', 30), # 30 mixture components
         #    ('peer', 100), # 100 peer factors
             ]
-        ])
-    ]
+        ]
 
-#step.bind(models=models)
-
-#step.bind(model_losses=[
-#    (spec, fit_eval['loss'])
-#    for spec, fit_eval in models
-#    ])
-
-@step(vtag='0.2 renaming')
-def model_gene_r2s(
-        gex_tissue_fold,
-        model_losses
-        ):
+@step
+def s_model_gene_r2s(fold: FoldDict,
+                     losses: list[tuple[dict, npt.NDArray[np.float64]]]
+                     ) -> pa.Table:
     """
     Per gene residual share of variance for all evaluated models
     """
-    test_variances = np.var(gex_tissue_fold['test'], axis=0)
-    num_test_samples = gex_tissue_fold['test'].shape[0]
+    test_variances = np.var(fold['test'], axis=0)
+    num_test_samples = fold['test'].shape[0]
 
     return pa.concat_tables(
-        gex_tissue_fold['gene_info']
+        fold['gene_info']
             .append_column('model', pa.array(np.full(
-                len(gex_tissue_fold['gene_info']),
+                len(fold['gene_info']),
                 gemz.models.get_name(spec)
                 )))
             .append_column('r2', pa.array(
                 loss / (test_variances * num_test_samples)
                 ))
-        for spec, loss in model_losses
+        for spec, loss in losses
         )
+
+def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> pa.Table:
+    """
+    Test residuals of all models
+    """
+    fits = [
+            (spec, gemz_galp.models.fit_eval(spec, t_fold, 'iRSS'))
+            for spec in specs
+            ]
+    losses=[(spec, t_fit_eval['loss']) for spec, t_fit_eval in fits]
+
+    return s_model_gene_r2s(t_fold, losses)
+
 
 @view
 def hist_linear_r2(model_gene_r2s):

@@ -358,7 +358,9 @@ def s_model_gene_r2s(fold: FoldDict,
                 gemz.models.get_name(spec)
                 )))
             .append_column('r2', pa.array(
-                loss / (test_variances * num_test_samples)
+                # Ideally loss should be a numpy but gemz currently leak
+                # some jax arrays here
+                np.array(loss) / (test_variances * num_test_samples)
                 ))
         for spec, loss in losses
         )

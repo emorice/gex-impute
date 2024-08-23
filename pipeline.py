@@ -327,6 +327,7 @@ def get_specs() -> list[dict]:
         {'model': 'peer', 'n_factors': 60},
         {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
         {'model': 'igmm', 'n_groups': 2},
+        {'model': 'cmk', 'n_groups': 100},
         {'model': 'lscv_precision_target'},
         {'model': 'lscv_free_diagonal'},
         {'model': 'lscv_free_diagonal', 'scale': None},
@@ -454,13 +455,12 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                 }
             )
 
-@view
-def all_r2(model_gene_r2s, ref_model):
+
+def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
     """
     Scatter of per-gene difficulty as measured by perf wrt reference model, for
     all models in compact form.
     """
-    highlights = {'cv/igmm'}
 
     r2_df = (
         model_gene_r2s
@@ -511,6 +511,7 @@ def all_r2(model_gene_r2s, ref_model):
                 'title': f'Medians of all models vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
+                'xaxis.exponentformat': 'none',
                 'yaxis.title': 'Relative alternative model residual R²',
                 'legend.title': 'Model',
                 'width': 600, #1000,

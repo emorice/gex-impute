@@ -17,7 +17,7 @@ import numpy.typing as npt
 import plotly.graph_objects as go
 import plotly_template
 
-from galp import step, view, new_path
+from galp import step, view, new_path, make_task
 import gemz
 import gemz_galp.models
 import gemz.plots
@@ -336,7 +336,7 @@ def get_specs() -> list[dict]:
         for inner, gmax in [
             ('linear_shrinkage', None),
             ('svd', None),
-            ('cmk', None),
+        #    ('cmk', None), # custom, see get_model_gene_r2s
             ('igmm', 30), # 30 mixture components
         #    ('peer', 100), # 100 peer factors
             ]
@@ -374,6 +374,11 @@ def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> pa.Table:
             (spec, gemz_galp.models.fit_eval(spec, t_fold, 'iRSS'))
             for spec in specs
             ]
+
+    cmk_cv_spec = {'model': 'cv', 'inner': {'model': 'cmk'}, 'loss_name': 'GEOM', 'grid_max': 250}
+    t_cmk_cfe = make_task(gemz_galp.models.fit_eval, (cmk_cv_spec, t_fold, 'iRSS'), cpus=8, vm='32G')
+    fits.append((cmk_cv_spec, t_cmk_cfe))
+
     losses=[(spec, t_fit_eval['loss']) for spec, t_fit_eval in fits]
 
     return s_model_gene_r2s(t_fold, losses)

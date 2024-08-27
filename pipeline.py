@@ -318,27 +318,27 @@ def get_tissue_fold(tissue_name: str, fold_index: int) -> FoldDict:
 #step.bind(tissue_name='Whole Blood', transformation='cpm')
 #step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
 
-def get_specs() -> list[dict]:
+def get_specs() -> list[tuple[dict, dict]]:
     """
-    Specification of all gemz models tried
+    Specification of all gemz models tried, along with the resources for each of them
     """
     return [
-        {'model': 'linear'},
-        {'model': 'peer', 'n_factors': 60},
-        {'model': 'peer', 'n_factors': 60, 'reestimate_precision': True},
-        {'model': 'igmm', 'n_groups': 2},
-        {'model': 'cmk', 'n_groups': 100},
-        {'model': 'lscv_precision_target'},
-        {'model': 'lscv_free_diagonal'},
-        {'model': 'lscv_free_diagonal', 'scale': None},
+        ({'model': 'linear'}, {}),
+        ({'model': 'peer', 'n_factors': 60}, {}),
+        ({'model': 'peer', 'n_factors': 60, 'reestimate_precision': True}, {}),
+        ({'model': 'igmm', 'n_groups': 2}, {}),
+        ({'model': 'cmk', 'n_groups': 100}, {}),
+        ({'model': 'lscv_precision_target'}, {}),
+        ({'model': 'lscv_free_diagonal'}, {}),
+        ({'model': 'lscv_free_diagonal', 'scale': None}, {}),
         ] + [
-        {'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM', 'grid_max': gmax}
-        for inner, gmax in [
-            ('linear_shrinkage', None),
-            ('svd', None),
-        #    ('cmk', None), # custom, see get_model_gene_r2s
-            ('igmm', 30), # 30 mixture components
-        #    ('peer', 100), # 100 peer factors
+        ({'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM', 'grid_max': gmax}, resources)
+        for inner, gmax, resources in [
+            ('linear_shrinkage', None, {}),
+            ('svd', None, {}),
+            ('cmk', 250, {'cpus': 8, 'vm': '32G'}),
+            ('igmm', 30, {}), # up to 30 mixture components
+        #    ('peer', 100), # up to 100 peer factors
             ]
         ]
 
@@ -366,47 +366,38 @@ def s_model_gene_r2s(fold: FoldDict,
         for spec, loss in losses
         )
 
-def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> pa.Table:
+def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> tuple[list, pa.Table]:
     """
     Test residuals of all models
     """
     fits = [
-            (spec, gemz_galp.models.fit_eval(spec, t_fold, 'iRSS'))
-            for spec in specs
+            (spec, make_task(gemz_galp.models.fit_eval, (spec, t_fold, 'iRSS'), **resources))
+            for spec, resources in specs
             ]
-
-    cmk_cv_spec = {'model': 'cv', 'inner': {'model': 'cmk'}, 'loss_name': 'GEOM', 'grid_max': 250}
-    t_cmk_cfe = make_task(gemz_galp.models.fit_eval, (cmk_cv_spec, t_fold, 'iRSS'), cpus=8, vm='32G')
-    fits.append((cmk_cv_spec, t_cmk_cfe))
 
     losses=[(spec, t_fit_eval['loss']) for spec, t_fit_eval in fits]
 
-    return s_model_gene_r2s(t_fold, losses)
+    return fits, s_model_gene_r2s(t_fold, losses)
 
 
-@view
-def hist_linear_r2(model_gene_r2s):
+def hist_r2(model_gene_r2s, ref_model):
     """
     Histogram of per-gene difficulty as measured by perf of reference model
     """
     return go.Figure([
                 go.Histogram(x=
                     model_gene_r2s
-                        .filter(pc.field('model') == 'linear')
+                        .filter(pc.field('model') == ref_model)
                         ['r2']
                     )
             ], {
-                'xaxis.title': 'Linear model residual R^2',
+                'xaxis.title': 'Linear model residual R²',
                 'yaxis.title': 'Number of genes',
                 'width': 800,
                 }
             )
 
-#step.bind(ref_model='linear')
-#step.bind(alt_model='igmm/2')
-
-@view
-def vs_r2(model_gene_r2s, ref_model, alt_model):
+def vs_r2(model_gene_r2s: pa.Table, ref_model: str, alt_model: str):
     """
     Scatter of per-gene difficulty as measured by perf wrt reference model
     """
@@ -434,29 +425,38 @@ def vs_r2(model_gene_r2s, ref_model, alt_model):
                     y=r2_df[alt_model] / r2_df[ref_model],
                     hovertext=desc,
                     mode='markers',
-                    marker={'size': 2}
-                    ),
+                    marker={'size': 2},
+                    opacity=.8,
+                ),
                 go.Scattergl(
-                    x=trend[ref_model], y=trend[alt_model] / trend[ref_model], mode='lines',
+                    x=trend[ref_model],
+                    y=trend[alt_model] / trend[ref_model],
+                    mode='lines',
+                    line={'width': 1.5},
                     hovertext=[
-                    f'{100 * l:.6g} - {100 *u:.6g} %'
-                    for l, u in
-                    zip(trend.index, [*trend.index[1:], 1.0])
+                        f'{100 * l:.6g} - {100 *u:.6g} %'
+                        for l, u in zip(trend.index, [*trend.index[1:], 1.0])
                     ],
-                    name='median'),
+                    name='median',
+                ),
                 go.Scattergl(
                     x=r2_df[ref_model],
                     y=np.ones_like(r2_df[ref_model]),
                     mode='lines',
-                    name='baseline'
-                    )
+                    line={'width': 1.5},
+                    name=f'baseline ({ref_model})',
+                )
             ], {
                 'title': f'{alt_model} vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
-                'yaxis.title': f'Relative alternative model ({alt_model}) residual R²',
+                'yaxis': {
+                    'title': f'Relative alternative model ({alt_model}) residual R²',
+                    'rangemode': 'tozero'
+                },
                 'width': 1000,
                 'height': 800,
+                'margin': {'t': 40},
                 }
             )
 
@@ -510,7 +510,7 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                     x=trends['abs_ref'], y=trends[ref_model],
                     mode='lines',
                     line={'color': 'red', 'width': 1},
-                    name='baseline'
+                    name=f'baseline ({ref_model})'
                     )
             ], {
                 'title': f'Medians of all models vs. {ref_model}',
@@ -519,21 +519,13 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 'xaxis.exponentformat': 'none',
                 'yaxis.title': 'Relative alternative model residual R²',
                 'legend.title': 'Model',
-                'width': 600, #1000,
-                'height': 400, #800,
+                'width': 600,
+                'height': 400,
                 'margin': {'t': 40},
                 }
             )
 
-#step.bind(cv_model=next(
-#            (spec, cfe)
-#            for spec, cfe in models
-#            if spec['model'] == 'cv'
-#            if spec['inner']['model'] == 'igmm'
-#            )
-#        )
 
-@view
 def cv_plot(cv_model):
     """
     Cross-validation curve for bound model

@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 import plotly.graph_objects as go
-import plotly_template
+from . import template
 
 import galp
 from galp import step, view, new_path, make_task, query
@@ -398,7 +398,6 @@ def hist_r2(model_gene_r2s, ref_model):
             ], {
                 'xaxis.title': 'Linear model residual R²',
                 'yaxis.title': 'Number of genes',
-                'width': 800,
                 }
             )
 
@@ -432,36 +431,37 @@ def vs_r2(model_gene_r2s: pa.Table, ref_model: str, alt_model: str):
                     mode='markers',
                     marker={'size': 2},
                     opacity=.8,
+                    showlegend=False,
                 ),
                 go.Scattergl(
                     x=trend[ref_model],
                     y=trend[alt_model] / trend[ref_model],
                     mode='lines',
-                    line={'width': 1.5},
+                    #line={'width': 1.5},
                     hovertext=[
                         f'{100 * l:.6g} - {100 *u:.6g} %'
                         for l, u in zip(trend.index, [*trend.index[1:], 1.0])
                     ],
                     name='median',
+                    showlegend=False,
                 ),
                 go.Scattergl(
                     x=r2_df[ref_model],
                     y=np.ones_like(r2_df[ref_model]),
                     mode='lines',
-                    line={'width': 1.5},
+                    #line={'width': 1.5},
                     name=f'baseline ({ref_model})',
+                    showlegend=False,
                 )
             ], {
-                'title': f'{alt_model} vs. {ref_model}',
+                #'title': f'{alt_model} vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
                 'yaxis': {
                     'title': f'Relative alternative model ({alt_model}) residual R²',
                     'rangemode': 'tozero'
                 },
-                'width': 1000,
-                'height': 800,
-                'margin': {'t': 40},
+                #'margin': {'t': 40},
                 }
             )
 
@@ -497,9 +497,9 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 go.Scatter(
                     x=trends['abs_ref'], y=trends[model], mode='lines',
                     line=(
-                        {'color': 'blue', 'width': 1}
+                        {'color': 'blue'}#, 'width': 1}
                         if model in highlights
-                        else {'color': 'black', 'width': 1}
+                        else {'color': 'black'}#, 'width': 1}
                         ),
                     opacity = 1. if model in highlights else 0.2,
                     hovertext=[
@@ -507,26 +507,25 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                     for l, u in
                     zip(trends.index, [*trends.index[1:], 1.0])
                     ],
-                    name=model, showlegend=(model in highlights)
+                    name=model,
+                    showlegend=False, #(model in highlights)
                     )
                 for model in trends if model not in (ref_model, 'abs_ref')
             ] + [
                 go.Scatter(
                     x=trends['abs_ref'], y=trends[ref_model],
                     mode='lines',
-                    line={'color': 'red', 'width': 1},
-                    name=f'baseline ({ref_model})'
+                    line={'color': 'red'},#, 'width': 1},
+                    name=f'baseline ({ref_model})',
+                    showlegend=False,
                     )
             ], {
-                'title': f'Medians of all models vs. {ref_model}',
+                #'title': f'Medians of all models vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
-                'xaxis.exponentformat': 'none',
                 'yaxis.title': 'Relative alternative model residual R²',
-                'legend.title': 'Model',
-                'width': 600,
-                'height': 400,
-                'margin': {'t': 40},
+                #'legend.title': 'Model',
+                #'margin': {'t': 40},
                 }
             )
 

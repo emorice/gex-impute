@@ -47,5 +47,8 @@ plotly.io.templates.default = go.layout.Template(layout={
             'line': {'width': 2*px_rule},
             'marker': {'symbol': 'cross-thin', 'line.width': 2*px_rule, 'line.color': plotly.colors.DEFAULT_PLOTLY_COLORS[i]}
         } for i in range(10)],
+        'scattergl': [{
+            'line': {'width': 3*px_rule},
+        }],
         },
 )

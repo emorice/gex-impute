@@ -15,7 +15,7 @@ import numpy as np
 import numpy.typing as npt
 
 import plotly.graph_objects as go
-from . import template
+from gex_impute import template
 
 import galp
 from galp import step, view, new_path, make_task, query

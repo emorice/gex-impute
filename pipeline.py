@@ -13,6 +13,7 @@ import pyarrow.compute as pc
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 
 import plotly.graph_objects as go
 from gex_impute import template
@@ -523,6 +524,9 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 #'title': f'Medians of all models vs. {ref_model}',
                 'xaxis.title': f'Reference model ({ref_model}) residual R²',
                 'xaxis.type': 'log',
+                'xaxis.tickmode': 'array',
+                'xaxis.tickvals': [0.05, 0.1, 0.2, 0.3, 0.4, 0.5],
+                'xaxis.exponentformat': 'none',
                 'yaxis.title': 'Relative alternative model residual R²',
                 #'legend.title': 'Model',
                 #'margin': {'t': 40},
@@ -554,6 +558,32 @@ def cv_plot(cv_model):
     """
     spec, cfe = cv_model
 
-    fig, = gemz.plots.plot_cv(spec, cfe['fit'])
-    fig = fig.update_layout(title=f'CV results for {gemz.models.get_name(spec)}')
-    return fig
+    grid = cfe['fit']['grid']
+    losses, specs = zip(*(
+            (result['loss'], spec)
+            for spec, result in grid
+            ))
+
+    axis, = gemz.models.get(spec['inner']['model']).cv.get_grid_axes(specs)
+
+    loss_df = pd.DataFrame(
+            {axis['name']: axis['values']}
+            ).assign(loss=losses)
+
+    return go.Figure(
+            data=[
+                go.Scatter(
+                    x=loss_df[axis['name']],
+                    y=loss_df['loss'],
+                    mode='lines+markers',
+                    showlegend=False,
+                    ),
+                ],
+            layout={
+                'xaxis': {
+                    'title': f'Number of {axis["name"].lower()}',
+                    'type': 'log' if axis['log'] else 'linear'
+                    },
+                'yaxis': { 'title': 'Cross-validation loss'},
+                }
+            )

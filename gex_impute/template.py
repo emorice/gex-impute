@@ -28,7 +28,8 @@ plotly.io.templates.default = go.layout.Template(layout={
             'showline': True,
             'ticks': 'outside',
             'constrain': 'domain',
-            'exponentformat': 'none',
+            'exponentformat': 'power',
+            'minexponent': 4,
             'color': 'black',
             'title.font.size': px_normal,
             'linewidth': px_rule,
@@ -42,6 +43,9 @@ plotly.io.templates.default = go.layout.Template(layout={
     },
     data={
         'contour': [{'colorbar': {'exponentformat': 'power'}, 'opacity': 0.97}],
-        'scatter': [{'line': {'width': 2*px_rule}}]
-        }
+        'scatter': [{
+            'line': {'width': 2*px_rule},
+            'marker': {'symbol': 'cross-thin', 'line.width': 2*px_rule, 'line.color': plotly.colors.DEFAULT_PLOTLY_COLORS[i]}
+        } for i in range(10)],
+        },
 )

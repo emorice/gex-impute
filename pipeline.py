@@ -17,7 +17,8 @@ import numpy.typing as npt
 import plotly.graph_objects as go
 import plotly_template
 
-from galp import step, view, new_path, make_task
+import galp
+from galp import step, view, new_path, make_task, query
 import gemz
 import gemz_galp.models
 import gemz.plots
@@ -337,8 +338,8 @@ def get_specs() -> list[tuple[dict, dict]]:
             ('linear_shrinkage', None, {}),
             ('svd', None, {}),
             ('cmk', 250, {'cpus': 8, 'vm': '32G'}),
-            ('igmm', 30, {}), # up to 30 mixture components
-        #    ('peer', 100), # up to 100 peer factors
+            ('igmm', 30, {'cpus': 8, 'vm': '32G'}), # up to 30 mixture components
+            ('peer', 100, {'cpus': 8, 'vm': '32G'}), # up to 100 peer factors
             ]
         ]
 
@@ -379,7 +380,11 @@ def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> tuple[list, pa.Ta
 
     return fits, s_model_gene_r2s(t_fold, losses)
 
-
+def run_r2s_blood_0_peer():
+    t_fold = get_tissue_fold('Whole Blood', 0)
+    specs = get_specs(with_peer=True)
+    return get_model_gene_r2s(t_fold, specs)
+    
 def hist_r2(model_gene_r2s, ref_model):
     """
     Histogram of per-gene difficulty as measured by perf of reference model
@@ -525,7 +530,25 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 }
             )
 
+def extract_cv(t_cv_fit):
+    """
+    Gather only the cross-validation data necessary to generate plots
 
+    (The sum of all the cross validation models is commonly too large for memory)
+
+    Args:
+        t_cv_fit: the fit() task of the cv model, or equivalently the 'fit' item of the fit_eval() task
+    """
+    # Give only the base grid as the full grid is too large
+    return _s_extract_cv_losses(query(t_cv_fit['grid'], '$base'))
+    
+
+@step
+def _s_extract_cv_losses(grid):
+    if isinstance(grid, galp.task_types.TaskRef):
+        return _s_extract_cv_losses(query(grid, '$base'))
+    return [(spec, cfe['loss']) for spec, cfe in grid]
+    
 def cv_plot(cv_model):
     """
     Cross-validation curve for bound model

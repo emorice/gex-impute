@@ -10,6 +10,9 @@ dependencies = [
 	"gemz-galp @ git+ssh://git@github.com/emorice/gemz-galp.git",
 	]
 
+[project.scripts]
+gex-impute-plots = "gex_impute.plots:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

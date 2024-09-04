@@ -13,13 +13,9 @@ import pyarrow.compute as pc
 
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
-
-import plotly.graph_objects as go
-from gex_impute import template
 
 import galp
-from galp import step, view, new_path, make_task, query
+from galp import step, new_path, make_task, query
 import gemz
 import gemz_galp.models
 import gemz.plots
@@ -381,157 +377,14 @@ def get_model_gene_r2s(t_fold: FoldDict, specs: list[dict]) -> tuple[list, pa.Ta
 
     return fits, s_model_gene_r2s(t_fold, losses)
 
-def run_r2s_blood_0_peer():
+def run_r2s_blood_0():
+    """
+    Entry point
+    """
     t_fold = get_tissue_fold('Whole Blood', 0)
-    specs = get_specs(with_peer=True)
+    specs = get_specs()
     return get_model_gene_r2s(t_fold, specs)
-    
-def hist_r2(model_gene_r2s, ref_model):
-    """
-    Histogram of per-gene difficulty as measured by perf of reference model
-    """
-    return go.Figure([
-                go.Histogram(x=
-                    model_gene_r2s
-                        .filter(pc.field('model') == ref_model)
-                        ['r2']
-                    )
-            ], {
-                'xaxis.title': 'Linear model residual R²',
-                'yaxis.title': 'Number of genes',
-                }
-            )
 
-def vs_r2(model_gene_r2s: pa.Table, ref_model: str, alt_model: str):
-    """
-    Scatter of per-gene difficulty as measured by perf wrt reference model
-    """
-    r2_df = model_gene_r2s.to_pandas()
-
-    r2_df = r2_df.pivot(index=['Name', 'Description'], columns='model', values='r2')
-
-    desc = r2_df.index.to_frame()['Description']
-
-    n_bins = 20
-    trend = (
-        r2_df[[ref_model, alt_model]]
-        .sort_values(ref_model)
-        .assign(cdf=
-            np.floor(n_bins * np.arange(len(r2_df)) / len(r2_df))
-            / n_bins
-            )
-        .groupby('cdf')
-        .median()
-        )
-
-    return go.Figure([
-                go.Scattergl(
-                    x=r2_df[ref_model],
-                    y=r2_df[alt_model] / r2_df[ref_model],
-                    hovertext=desc,
-                    mode='markers',
-                    marker={'size': 2},
-                    opacity=.8,
-                    showlegend=False,
-                ),
-                go.Scattergl(
-                    x=trend[ref_model],
-                    y=trend[alt_model] / trend[ref_model],
-                    mode='lines',
-                    #line={'width': 1.5},
-                    hovertext=[
-                        f'{100 * l:.6g} - {100 *u:.6g} %'
-                        for l, u in zip(trend.index, [*trend.index[1:], 1.0])
-                    ],
-                    name='median',
-                    showlegend=False,
-                ),
-                go.Scattergl(
-                    x=r2_df[ref_model],
-                    y=np.ones_like(r2_df[ref_model]),
-                    mode='lines',
-                    #line={'width': 1.5},
-                    name=f'baseline ({ref_model})',
-                    showlegend=False,
-                )
-            ], {
-                #'title': f'{alt_model} vs. {ref_model}',
-                'xaxis.title': f'Reference model ({ref_model}) residual R²',
-                'xaxis.type': 'log',
-                'yaxis': {
-                    'title': f'Relative alternative model ({alt_model}) residual R²',
-                    'rangemode': 'tozero'
-                },
-                #'margin': {'t': 40},
-                }
-            )
-
-
-def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
-    """
-    Scatter of per-gene difficulty as measured by perf wrt reference model, for
-    all models in compact form.
-    """
-
-    r2_df = (
-        model_gene_r2s
-        .to_pandas()
-        .pivot(index=['Name', 'Description'], columns='model', values='r2')
-        .sort_values(ref_model)
-        )
-
-    nr2_df = r2_df.apply(lambda s: s / r2_df[ref_model])
-    nr2_df['abs_ref'] = r2_df[ref_model]
-
-    n_bins = 20
-    trends = (
-        nr2_df
-        .assign(cdf=
-            np.floor(n_bins * np.arange(len(nr2_df)) / len(nr2_df))
-            / n_bins
-            )
-        .groupby('cdf')
-        .median()
-        )
-
-    return go.Figure([
-                go.Scatter(
-                    x=trends['abs_ref'], y=trends[model], mode='lines',
-                    line=(
-                        {'color': 'blue'}#, 'width': 1}
-                        if model in highlights
-                        else {'color': 'black'}#, 'width': 1}
-                        ),
-                    opacity = 1. if model in highlights else 0.2,
-                    hovertext=[
-                    f'{100 * l:.6g} - {100 *u:.6g} %'
-                    for l, u in
-                    zip(trends.index, [*trends.index[1:], 1.0])
-                    ],
-                    name=model,
-                    showlegend=False, #(model in highlights)
-                    )
-                for model in trends if model not in (ref_model, 'abs_ref')
-            ] + [
-                go.Scatter(
-                    x=trends['abs_ref'], y=trends[ref_model],
-                    mode='lines',
-                    line={'color': 'red'},#, 'width': 1},
-                    name=f'baseline ({ref_model})',
-                    showlegend=False,
-                    )
-            ], {
-                #'title': f'Medians of all models vs. {ref_model}',
-                'xaxis.title': f'Reference model ({ref_model}) residual R²',
-                'xaxis.type': 'log',
-                'xaxis.tickmode': 'array',
-                'xaxis.tickvals': [0.05, 0.1, 0.2, 0.3, 0.4, 0.5],
-                'xaxis.exponentformat': 'none',
-                'yaxis.title': 'Relative alternative model residual R²',
-                #'legend.title': 'Model',
-                #'margin': {'t': 40},
-                }
-            )
 
 def extract_cv(t_cv_fit):
     """
@@ -540,11 +393,11 @@ def extract_cv(t_cv_fit):
     (The sum of all the cross validation models is commonly too large for memory)
 
     Args:
-        t_cv_fit: the fit() task of the cv model, or equivalently the 'fit' item of the fit_eval() task
+        t_cv_fit: the fit() task of the cv model, or equivalently the 'fit' item
+        of the fit_eval() task
     """
     # Give only the base grid as the full grid is too large
     return _s_extract_cv_losses(query(t_cv_fit['grid'], '$base'))
-    
 
 @step
 def _s_extract_cv_losses(grid):
@@ -552,38 +405,3 @@ def _s_extract_cv_losses(grid):
         return _s_extract_cv_losses(query(grid, '$base'))
     return [(spec, cfe['loss']) for spec, cfe in grid]
     
-def cv_plot(cv_model):
-    """
-    Cross-validation curve for bound model
-    """
-    spec, cfe = cv_model
-
-    grid = cfe['fit']['grid']
-    losses, specs = zip(*(
-            (result['loss'], spec)
-            for spec, result in grid
-            ))
-
-    axis, = gemz.models.get(spec['inner']['model']).cv.get_grid_axes(specs)
-
-    loss_df = pd.DataFrame(
-            {axis['name']: axis['values']}
-            ).assign(loss=losses)
-
-    return go.Figure(
-            data=[
-                go.Scatter(
-                    x=loss_df[axis['name']],
-                    y=loss_df['loss'],
-                    mode='lines+markers',
-                    showlegend=False,
-                    ),
-                ],
-            layout={
-                'xaxis': {
-                    'title': f'Number of {axis["name"].lower()}',
-                    'type': 'log' if axis['log'] else 'linear'
-                    },
-                'yaxis': { 'title': 'Cross-validation loss'},
-                }
-            )

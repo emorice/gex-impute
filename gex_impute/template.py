@@ -5,21 +5,22 @@ Default settings for plotly
 import plotly
 import plotly.graph_objects as go
 
-def topx(pts):
+def topx(pts: float) -> float:
+    """Conversion from TeX points to pixels at 96 DPI"""
     return pts * 96 / 72.27
 
-pt_width = 419.0
-pt_normal = 10.95
-pt_footnote = 9.0
-pt_tiny = 7.0
-px_normal = topx(pt_normal)
-px_footnote = topx(pt_footnote)
-px_tiny = topx(pt_tiny)
-px_rule = topx(0.4)
+PT_WIDTH = 419.0
+PT_NORMAL = 10.95
+PT_FOOTNOTE = 9.0
+PT_TINY = 7.0
+PX_NORMAL = topx(PT_NORMAL)
+PX_FOOTNOTE = topx(PT_FOOTNOTE)
+PX_TINY = topx(PT_TINY)
+PX_RULE = topx(0.4)
 
 plotly.io.templates.default = go.layout.Template(layout={
-    'width': topx(pt_width),
-    'height': topx(pt_width * 0.75),
+    'width': topx(PT_WIDTH),
+    'height': topx(PT_WIDTH * 0.75),
     'autosize': False,
     'font_family': 'Palatino',
     'margin': {'r': 0, 'b': 45, 't': 0},
@@ -31,11 +32,11 @@ plotly.io.templates.default = go.layout.Template(layout={
             'exponentformat': 'power',
             'minexponent': 4,
             'color': 'black',
-            'title.font.size': px_normal,
-            'linewidth': px_rule,
-            'gridwidth': px_rule,
-            'tickwidth': px_rule,
-            'tickfont.size': px_footnote,
+            'title.font.size': PX_NORMAL,
+            'linewidth': PX_RULE,
+            'gridwidth': PX_RULE,
+            'tickwidth': PX_RULE,
+            'tickfont.size': PX_FOOTNOTE,
         } for a in 'xy'
     },
     'xaxis.title.standoff': 0,
@@ -44,11 +45,18 @@ plotly.io.templates.default = go.layout.Template(layout={
     data={
         'contour': [{'colorbar': {'exponentformat': 'power'}, 'opacity': 0.97}],
         'scatter': [{
-            'line': {'width': 2*px_rule},
-            'marker': {'symbol': 'cross-thin', 'line.width': 2*px_rule, 'line.color': plotly.colors.DEFAULT_PLOTLY_COLORS[i]}
+            'line': {'width': 2*PX_RULE},
+            'marker': {
+                'symbol': 'cross-thin',
+                'line.width': 2*PX_RULE,
+                'line.color': plotly.colors.DEFAULT_PLOTLY_COLORS[i]
+                }
         } for i in range(10)],
         'scattergl': [{
-            'line': {'width': 3*px_rule},
+            'line': {'width': 3*PX_RULE},
         }],
+        'histogram': [{
+            'marker': {'line': {'width': PX_RULE, 'color': 'black'}}
+            }],
         },
 )

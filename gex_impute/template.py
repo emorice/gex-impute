@@ -39,7 +39,7 @@ plotly.io.templates.default = go.layout.Template(layout={
             'tickfont.size': PX_FOOTNOTE,
         } for a in 'xy'
     },
-    'xaxis.title.standoff': 0,
+    'xaxis.title.standoff': 10,
     'yaxis.title.standoff': 5,
     },
     data={

@@ -4,3 +4,5 @@ store
 venv
 
 .ipynb_checkpoints/
+*.out
+*.log

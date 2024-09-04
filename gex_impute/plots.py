@@ -29,7 +29,7 @@ def hist_r2(model_gene_r2s, ref_model):
                         ['r2'],
                     }),
             ], {
-                'xaxis.title': 'Linear model residual R²',
+                'xaxis.title': 'Residual R²',
                 'yaxis.title': 'Number of genes',
                 }
             )

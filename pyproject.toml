@@ -5,6 +5,7 @@ dependencies = [
 	"pyarrow",
 	"pandas",
 	"plotly",
+	"kaleido",
 	"galp @ git+ssh://git@github.com/emorice/galp.git",
 	"gemz[peer] @ git+ssh://git@github.com/emorice/gemz.git",
 	"gemz-galp @ git+ssh://git@github.com/emorice/gemz-galp.git",

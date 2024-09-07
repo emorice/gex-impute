@@ -3,6 +3,7 @@ Plots of imputation results
 """
 
 import os
+import time
 import argparse
 
 import pyarrow as pa
@@ -189,17 +190,11 @@ def median_r2_bars(r2s: pa.Table) -> go.Figure:
         }
     )
 
-def cv_plot(cv_model):
+def cv_plot(spec, grid) -> go.Figure:
     """
     Cross-validation curve for bound model
     """
-    spec, cfe = cv_model
-
-    grid = cfe['fit']['grid']
-    losses, specs = zip(*(
-            (result['loss'], spec)
-            for spec, result in grid
-            ))
+    specs, losses = zip(*grid)
 
     axis, = gemz.models.get(spec['inner']['model']).cv.get_grid_axes(specs)
 
@@ -241,14 +236,28 @@ def export_all_plots(store: str, output: str) -> None:
     specs = pipeline.get_specs()
 
     fits, t_r2s = pipeline.get_model_gene_r2s(t_fold, specs)
+    fits_by_name = {
+            gemz.models.get_name(spec): (spec, fit)
+            for spec, fit in fits
+            }
+    start = time.time()
     print('Loading results...', end='', flush=True)
     r2s = galp.run(t_r2s, store=store)
-    print(' OK', flush=True)
+    print(f' OK ({time.time() - start:.0g}s)', flush=True)
 
     write = lambda fig, name: write_to(fig, name, output)
 
     write(median_r2_bars(r2s), 'all_median_r2s')
     write(hist_r2(r2s, 'cv/svd'), 'hist_svd_r2')
+
+    svd_spec, svd_cfe = fits_by_name['cv/svd2']
+    svd_grid = galp.run(pipeline.extract_cv(
+        svd_cfe['fit']), store=store)
+    svd_fig = cv_plot(svd_spec, svd_grid)
+    write(svd_fig.update_layout({'xaxis.type': 'linear'}), 'cv_svd')
+    write(svd_fig.update_layout({
+        'xaxis.type': 'linear', 'yaxis.range': [5160, 5190]
+        }), 'cv_svd_zoom')
 
 def main():
     """Entry point"""

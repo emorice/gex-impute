@@ -164,6 +164,31 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 }
             )
 
+def median_r2_bars(r2s: pa.Table) -> go.Figure:
+    """
+    High level summary of results
+    """
+    model_median_r2 = (
+        r2s
+        .to_pandas()
+        .groupby('model', as_index=False)
+        ['r2']
+        .median()
+        .sort_values('r2', ascending=False)
+    )
+    return go.Figure([
+        go.Bar({
+            'orientation': 'h',
+            'x': model_median_r2['r2'],
+            'y': model_median_r2['model'],
+        })
+        ], {
+            'margin': {'l': 140},
+            'yaxis.showline': False,
+            'xaxis.title': 'Median gene normalized RMSE',
+        }
+    )
+
 def cv_plot(cv_model):
     """
     Cross-validation curve for bound model
@@ -200,6 +225,12 @@ def cv_plot(cv_model):
                 }
             )
 
+def write_to(fig: go.Figure, name: str, output: str) -> None:
+    """
+    Export figure
+    """
+    fig.write_image(os.path.join(output, f'{name}.svg'))
+
 def export_all_plots(store: str, output: str) -> None:
     """
     Run all the graph generating code and create svg files
@@ -208,12 +239,16 @@ def export_all_plots(store: str, output: str) -> None:
 
     t_fold = pipeline.get_tissue_fold('Whole Blood', 0)
     specs = pipeline.get_specs()
+
     fits, t_r2s = pipeline.get_model_gene_r2s(t_fold, specs)
+    print('Loading results...', end='', flush=True)
     r2s = galp.run(t_r2s, store=store)
+    print(' OK', flush=True)
 
-    fig = hist_r2(r2s, 'cv/svd')
+    write = lambda fig, name: write_to(fig, name, output)
 
-    fig.write_image(os.path.join(output, 'hist_svd_r2.svg'))
+    write(median_r2_bars(r2s), 'all_median_r2s')
+    write(hist_r2(r2s, 'cv/svd'), 'hist_svd_r2')
 
 def main():
     """Entry point"""

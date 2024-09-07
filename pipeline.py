@@ -330,13 +330,14 @@ def get_specs() -> list[tuple[dict, dict]]:
         ({'model': 'lscv_free_diagonal'}, {}),
         ({'model': 'lscv_free_diagonal', 'scale': None}, {}),
         ] + [
-        ({'model': 'cv', 'inner': {'model': inner}, 'loss_name': 'GEOM', 'grid_max': gmax}, resources)
+        ({'model': 'cv', 'inner': inner, 'loss_name': 'GEOM', 'grid_max': gmax}, resources)
         for inner, gmax, resources in [
-            ('linear_shrinkage', None, {}),
-            ('svd', None, {}),
-            ('cmk', 250, {'cpus': 8, 'vm': '32G'}),
-            ('igmm', 30, {'cpus': 8, 'vm': '32G'}), # up to 30 mixture components
-            ('peer', 100, {'cpus': 8, 'vm': '32G'}), # up to 100 peer factors
+            ({'model': 'linear_shrinkage'}, None, {}),
+            ({'model': 'svd'} , 543, {}), # 543 is data size, should be auto but cv gets it wrong
+            ({'model': 'svd', 'revision': 2} , 543, {}),
+            ({'model': 'cmk'}, 250, {'cpus': 8, 'vm': '32G'}),
+            ({'model': 'igmm'}, 30, {'cpus': 8, 'vm': '32G'}), # up to 30 mixture components
+            ({'model': 'peer'}, 100, {'cpus': 8, 'vm': '32G'}), # up to 100 peer factors
             ]
         ]
 

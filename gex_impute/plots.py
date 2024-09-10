@@ -11,6 +11,7 @@ import pyarrow.compute as pc
 
 import numpy as np
 import pandas as pd
+import plotly
 import plotly.graph_objects as go
 
 import galp
@@ -220,11 +221,79 @@ def cv_plot(spec, grid) -> go.Figure:
                 }
             )
 
+def peer_variants(r2s: pa.Table) -> go.Figure:
+        peers = (
+            r2s
+            .filter(pc.starts_with(pc.field('model'), 'peer/60'))
+            .to_pandas()
+            .assign(log_r2=lambda df: np.log(df['r2']))
+            .groupby('model', as_index=False)
+            ['log_r2']
+            .aggregate(['mean', 'median'])
+            .assign(mean=lambda df: np.exp(df['mean']))
+            .assign(median=lambda df: np.exp(df['median']))
+            .sort_values('mean', ascending=False)
+        )
+
+        models = [{
+            'peer/60r': 'Covariance + precisions',
+            'peer/60rp': 'Precisions only',
+            'peer/60': 'Covariance only',
+            'peer/60p': 'No re-estimation'
+            }[name] for name in peers['model']]
+
+        return go.Figure([
+            go.Scatter(
+                x=peers['mean'],
+                y=models,
+                mode='markers',
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=peers['median'],
+                y=models,
+                mode='markers',
+                showlegend=False,
+            )
+            ], {
+            'margin': {'l': 135},
+            'yaxis': {'title': 'Parameters reestimated'},
+            'xaxis': {'title': 'Aggregate gene prediction normalized MSE'},
+            'annotations': [
+                {'text': 'Mean',
+                 'x': peers['mean'].iloc[1],
+                 'y': 1.1 , 'showarrow': False,
+                 'xanchor': 'left',
+                 'xshift': 20,
+                 'font.color': plotly.colors.DEFAULT_PLOTLY_COLORS[0]
+                },
+                {'text': 'Median',
+                 'x': peers['median'].iloc[1],
+                 'y': 1.1 , 'showarrow': False,
+                 'xanchor': 'right',
+                 'xshift': -20,
+                 'font.color': plotly.colors.DEFAULT_PLOTLY_COLORS[1]
+                }
+            ]
+        })
+
 def write_to(fig: go.Figure, name: str, output: str) -> None:
     """
     Export figure
     """
     fig.write_image(os.path.join(output, f'{name}.svg'))
+
+def get_cv_fig(store: str, fit: tuple) -> go.Figure:
+    """
+    Extract cv grid and make figure
+
+    Args:
+        fit: tuple (spec, cv_fit_eval object)
+    """
+    spec, cfe = fit
+    grid = galp.run(pipeline.extract_cv(
+        cfe['fit']), store=store)
+    return cv_plot(spec, grid)
 
 def export_all_plots(store: str, output: str) -> None:
     """
@@ -250,14 +319,24 @@ def export_all_plots(store: str, output: str) -> None:
     write(median_r2_bars(r2s), 'all_median_r2s')
     write(hist_r2(r2s, 'cv/svd'), 'hist_svd_r2')
 
-    svd_spec, svd_cfe = fits_by_name['cv/svd2']
-    svd_grid = galp.run(pipeline.extract_cv(
-        svd_cfe['fit']), store=store)
-    svd_fig = cv_plot(svd_spec, svd_grid)
+
+    svd_fig = get_cv_fig(store, fits_by_name['cv/svd2'])
     write(svd_fig.update_layout({'xaxis.type': 'linear'}), 'cv_svd')
     write(svd_fig.update_layout({
         'xaxis.type': 'linear', 'yaxis.range': [5160, 5190]
         }), 'cv_svd_zoom')
+
+    write(
+       get_cv_fig(store, fits_by_name['cv/peer'])
+            .update_layout({'xaxis.type': 'linear'}),
+        'cv_peer')
+
+    write(
+       get_cv_fig(store, fits_by_name['cv/cmk'])
+            .update_layout({'xaxis.type': 'linear'}),
+        'cv_cmk')
+
+    write(peer_variants(r2s), 'peer_variants')
 
 def main():
     """Entry point"""

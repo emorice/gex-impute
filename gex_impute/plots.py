@@ -166,28 +166,44 @@ def all_r2(model_gene_r2s: pa.Table, ref_model: str, highlights: set[str]):
                 }
             )
 
-def median_r2_bars(r2s: pa.Table) -> go.Figure:
+def median_r2s(r2s: pa.Table) -> go.Figure:
     """
     High level summary of results
     """
-    model_median_r2 = (
-        r2s
+    gb = (r2s
         .to_pandas()
         .groupby('model', as_index=False)
-        ['r2']
-        .median()
-        .sort_values('r2', ascending=False)
-    )
+        [['r2']])
+
+    quantiles = (
+        pd.concat(
+            [gb.quantile(q*.25).assign(agg=f'q{q}') for q in (1, 2, 3)]
+        )
+        .pivot(columns='agg', index='model', values='r2')
+        .reset_index()
+        .sort_values('q2', ascending=False)
+        )
     return go.Figure([
-        go.Bar({
-            'orientation': 'h',
-            'x': model_median_r2['r2'],
-            'y': model_median_r2['model'],
+        go.Scatter({
+            'y': quantiles['model'],
+            'x': quantiles['q2'],
+            'error_x': {
+                'arrayminus': quantiles['q2'] - quantiles['q1'],
+                'array': quantiles['q3'] - quantiles['q2'],
+                'thickness': template.PX_RULE,
+            },
+            'mode': 'markers',
+            'marker': {
+                'symbol': 'line-ns',
+                'line': {'width': 3*template.PX_RULE},
+            },
         })
         ], {
             'margin': {'l': 140},
             'yaxis.showline': False,
-            'xaxis.title': 'Median gene normalized RMSE',
+            'yaxis.showgrid': False,
+            'xaxis.title': 'Gene prediction normalized MSE (q1, median, q3)',
+            'xaxis.rangemode': 'tozero'
         }
     )
 
@@ -316,7 +332,7 @@ def export_all_plots(store: str, output: str) -> None:
 
     write = lambda fig, name: write_to(fig, name, output)
 
-    write(median_r2_bars(r2s), 'all_median_r2s')
+    write(median_r2s(r2s), 'all_median_r2s')
     write(hist_r2(r2s, 'cv/svd'), 'hist_svd_r2')
 
 
@@ -335,6 +351,11 @@ def export_all_plots(store: str, output: str) -> None:
        get_cv_fig(store, fits_by_name['cv/cmk'])
             .update_layout({'xaxis.type': 'linear'}),
         'cv_cmk')
+    
+    write(
+       get_cv_fig(store, fits_by_name['cv/igmm'])
+            .update_layout({'xaxis.type': 'linear'}),
+        'cv_igmm')
 
     write(peer_variants(r2s), 'peer_variants')
 

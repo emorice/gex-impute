@@ -1,11 +1,13 @@
 [project]
 name = "gex-impute"
 version = "0.0.dev1"
+# Limited by galp
+requires-python = ">= 3.10"
 dependencies = [
 	"pyarrow",
 	"pandas",
 	"plotly",
-	"kaleido",
+	"kaleido!=0.2.1.post1",
 	"galp @ git+ssh://git@github.com/emorice/galp.git",
 	"gemz[peer] @ git+ssh://git@github.com/emorice/gemz.git",
 	"gemz-galp @ git+ssh://git@github.com/emorice/gemz-galp.git",

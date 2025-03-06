@@ -312,10 +312,6 @@ def get_tissue_fold(tissue_name: str, fold_index: int) -> FoldDict:
     gene_mask_fg = gex_tissue_expressed_gene_masks_fg(tissue_counts, sample_masks_fs)
     return gex_tissue_fold(tissue_qn[fold_index], fold_index, gene_mask_fg, sample_masks_fs)
 
-# Test configuration
-#step.bind(tissue_name='Whole Blood', transformation='cpm')
-#step.bind(gex_tissue_qn_indexed=gex_tissue_qn[0], fold_index=0)
-
 def get_specs() -> list[tuple[dict, dict]]:
     """
     Specification of all gemz models tried, along with the resources for each of them
@@ -389,7 +385,6 @@ def run_r2s_blood_0():
     specs = get_specs()
     return get_model_gene_r2s(t_fold, specs)
 
-
 def extract_cv(t_cv_fit):
     """
     Gather only the cross-validation data necessary to generate plots
@@ -408,4 +403,3 @@ def _s_extract_cv_losses(grid):
     if isinstance(grid, galp.task_types.TaskRef):
         return _s_extract_cv_losses(query(grid, '$base'))
     return [(spec, cfe['loss']) for spec, cfe in grid]
-    
